@@ -1,0 +1,71 @@
+---
+- name: Install target web service dependencies
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+    name:
+      - python3
+      - iptables
+    state: present
+
+- name: Create target service directory
+  ansible.builtin.file:
+    path: /opt/firewall-vpn-target
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install target HTTP service
+  ansible.builtin.copy:
+    src: files/target_server.py
+    dest: /opt/firewall-vpn-target/target_server.py
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install target site configuration with per-sandbox flags
+  ansible.builtin.template:
+    src: target-config.json.j2
+    dest: /etc/firewall-vpn-target.json
+    owner: root
+    group: www-data
+    mode: '0640'
+
+- name: Install target HTTP service unit
+  ansible.builtin.template:
+    src: target-site.service.j2
+    dest: /etc/systemd/system/firewall-vpn-target.service
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install target-address firewall script
+  ansible.builtin.template:
+    src: lab-target-firewall.sh.j2
+    dest: /usr/local/sbin/lab-target-firewall.sh
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Install persistent target-address firewall unit
+  ansible.builtin.template:
+    src: lab-target-firewall.service.j2
+    dest: /etc/systemd/system/lab-target-firewall.service
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Enable target-address firewall before starting the target services
+  ansible.builtin.systemd:
+    name: lab-target-firewall.service
+    daemon_reload: true
+    enabled: true
+    state: restarted
+
+- name: Enable and start the isolated target website
+  ansible.builtin.systemd:
+    name: firewall-vpn-target.service
+    daemon_reload: true
+    enabled: true
+    state: restarted

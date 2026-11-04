@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+TARGET_IP={{ lab_target_ip | quote }}
+VPN_ENDPOINT_IP={{ vpn_server_ip | quote }}
+AUDIT_FLAG={{ flag_firewall | quote }}
+RULE_COMMENT="CRCZ-FW-AUDIT:${AUDIT_FLAG}"
+
+# Derive the physical interface from the route to the VPN server. The student
+# adds a more-specific route only for TARGET_IP, so this lookup stays physical.
+ROUTE_LOOKUP="$(ip -o route get "${VPN_ENDPOINT_IP}")"
+PHYSICAL_IFACE="$(awk '{for (i=1; i<=NF; i++) if ($i == "dev") {print $(i+1); exit}}' <<< "${ROUTE_LOOKUP}")"
+if [[ -z "${PHYSICAL_IFACE}" ]]; then
+    echo "Could not determine the physical interface to ${VPN_ENDPOINT_IP}" >&2
+    exit 1
+fi
+
+# Block direct egress to the target only on the physical NIC. Traffic routed
+# through tun0 is deliberately unaffected; the outer UDP VPN packet is allowed.
+if ! iptables -C OUTPUT -o "${PHYSICAL_IFACE}" -d "${TARGET_IP}/32" \
+    -m comment --comment "${RULE_COMMENT}" -j REJECT 2>/dev/null; then
+    iptables -I OUTPUT 1 -o "${PHYSICAL_IFACE}" -d "${TARGET_IP}/32" \
+        -m comment --comment "${RULE_COMMENT}" -j REJECT
+fi

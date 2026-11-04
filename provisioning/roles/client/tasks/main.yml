@@ -1,0 +1,94 @@
+---
+- name: Install client-side tools and compiler
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+    name:
+      - build-essential
+      - iproute2
+      - iptables
+      - tcpdump
+      - curl
+      - net-tools
+      - netcat-openbsd
+    state: present
+
+- name: Create lab working directory
+  ansible.builtin.file:
+    path: /opt/firewall-vpn
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Copy the SEED VPN client source
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../seed-source/vpnclient.c"
+    dest: /opt/firewall-vpn/vpnclient.c
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Compile the SEED VPN client
+  ansible.builtin.command:
+    argv:
+      - gcc
+      - -O2
+      - -o
+      - /usr/local/bin/vpnclient
+      - /opt/firewall-vpn/vpnclient.c
+  args:
+    creates: /usr/local/bin/vpnclient
+
+- name: Install the egress-filter script
+  ansible.builtin.template:
+    src: lab-firewall.sh.j2
+    dest: /usr/local/sbin/lab-firewall.sh
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Install the persistent egress-filter systemd unit
+  ansible.builtin.template:
+    src: lab-egress-firewall.service.j2
+    dest: /etc/systemd/system/lab-egress-firewall.service
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Enable the egress firewall
+  ansible.builtin.systemd:
+    name: lab-egress-firewall.service
+    daemon_reload: true
+    enabled: true
+    state: restarted
+
+- name: Create student lab notes
+  ansible.builtin.copy:
+    dest: /home/user/README-firewall-vpn.txt
+    owner: user
+    group: user
+    mode: '0644'
+    content: |
+      Firewall-VPN Lab - SEED VPN client
+      ===================================
+      Target services: 192.168.20.1 TCP/8080 and TCP/2323
+      VPN server: 192.168.20.5 UDP/55555
+      TUN addresses: server 192.168.53.1/24, client 192.168.53.5/24
+
+      The SEED vpnclient.c creates tun0 when it starts. After the VPN server
+      is running, in terminal 1 execute:
+        sudo /usr/local/bin/vpnclient 192.168.20.5
+
+      In terminal 2 configure the created interface:
+        sudo ip addr add 192.168.53.5/24 dev tun0
+        sudo ip link set tun0 up
+
+      After the tunnel is running, add only the target host route:
+        sudo ip route replace 192.168.20.1/32 dev tun0
+        curl http://192.168.20.1:8080/flag
+        nc -nv 192.168.20.1 2323
+
+      Do not delete the egress firewall rule or change the default route.
+      Do not create tun0 manually before starting vpnclient. The tunnel is
+      intentionally unencrypted and must only be used in this sandbox.

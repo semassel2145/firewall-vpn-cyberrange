@@ -1,0 +1,280 @@
+{
+  "title": "Firewall Evasion Lab - TUN-over-UDP VPN",
+  "description": "A CyberRangeCZ implementation of the SEED firewall-evasion learning objectives. Students inspect an egress filter, establish a TUN-over-UDP tunnel, route the blocked destination through it, and verify the packet path.",
+  "prerequisites": [
+    "Basic Linux command-line knowledge",
+    "Basic IPv4 addressing and routing knowledge"
+  ],
+  "outcomes": [
+    "Inspect an egress firewall rule and explain its interface-specific behavior",
+    "Create and configure a Linux TUN interface",
+    "Establish a UDP-based IP tunnel between a client and VPN server",
+    "Explain IPv4 forwarding and source NAT on the VPN server",
+    "Verify tunnel traffic with tcpdump and packet captures",
+    "Verify that the tunnel carries non-web TCP traffic to the same destination host"
+  ],
+  "state": "UNRELEASED",
+  "levels": [
+    {
+      "title": "Lab briefing",
+      "level_type": "INFO_LEVEL",
+      "order": 0,
+      "estimated_duration": 3,
+      "minimal_possible_solve_time": null,
+      "content": "# Firewall Evasion Lab: Bypassing an Egress Firewall with a VPN\n\nAn organization blocks a selected destination using an egress firewall. You are working from the restricted client network. Your goal is to inspect the filter, configure both ends of a simple TUN-over-UDP tunnel, route only the blocked destination through that tunnel, and prove the packet path.\n\n## Topology\n\n| Node | Role | Address |\n|---|---|---|\n| `client` | Student workstation | `192.168.30.5/24` |\n| `server` | Student-configured VPN endpoint | `192.168.20.5/24`, UDP `55555` |\n| `router` | Inter-network router and target services | `192.168.20.1:8080`, TCP/2323 |\n\nThe VPN tunnel uses `192.168.53.1/24` on the server and `192.168.53.5/24` on the client. Both `client` and `server` are accessible to the trainee. The router runs the target services but has no trainee login.\n\n## Learning outcomes\n\n- Inspect an egress-filtering rule without disabling it.\n- Create and configure Linux TUN interfaces on both endpoints.\n- Establish a UDP-based IP tunnel between a client and VPN server.\n- Configure IPv4 forwarding, routing, and source NAT on the VPN server.\n- Verify that web and non-web traffic traverse the VPN.\n- Use packet capture to prove the outer and inner packet paths.\n\n**Safety:** This is a deliberately unencrypted teaching tunnel. All activity must remain inside this isolated sandbox. Do not reuse this implementation on a real network."
+    },
+    {
+      "title": "Access the client",
+      "level_type": "ACCESS_LEVEL",
+      "order": 1,
+      "estimated_duration": 2,
+      "minimal_possible_solve_time": null,
+      "passkey": "start",
+      "cloud_content": "Open both the `client` and `server` nodes from the sandbox topology and log in with:\n\n- Username: `user`\n- Password: `Password123`\n\nUse one console for the client and another for the server. You will configure the VPN server yourself. The `router` node hosts the target services and is not part of trainee access.\n\nSubmit **`start`** to continue.",
+      "local_content": "This definition is designed for a CyberRangeCZ cloud sandbox."
+    },
+    {
+      "title": "Task 1 - Audit the egress filter",
+      "level_type": "TRAINING_LEVEL",
+      "order": 2,
+      "estimated_duration": 8,
+      "minimal_possible_solve_time": 2,
+      "answer": null,
+      "answer_variable_name": "flag_firewall",
+      "content": "The client has an egress rule that rejects direct traffic to the target site. Do not remove, flush, or bypass the firewall rule.\n\n1. Attempt a direct request to `http://192.168.20.1:8080/` and observe the failure.\n2. Inspect the active IPv4 firewall rules using `iptables-save`.\n3. Find the rule that blocks the target and inspect its comment. The audit token is embedded in the comment as `CRCZ-FW-AUDIT:<token>`.\n\nSubmit only the **six-character token** after the colon.",
+      "solution": "1. A direct request should fail because the client OUTPUT rule rejects packets leaving the physical interface for `192.168.20.1/32`.\n2. Run `sudo iptables-save | grep CRCZ-FW-AUDIT`.\n3. Read and submit the six-character value after `CRCZ-FW-AUDIT:`.\n\nThe filter is interface-specific. When the route to the target uses `tun0`, the inner packet leaves through the TUN interface instead of the physical NIC. The outer UDP packet to the VPN server still uses the physical NIC.",
+      "solution_penalized": true,
+      "hints": [
+        {
+          "title": "Inspect active rules",
+          "content": "`iptables-save` prints the active rules in a restorable format. Search its output for the target IP or the comment prefix `CRCZ-FW-AUDIT`.",
+          "hint_penalty": 10,
+          "order": 0
+        },
+        {
+          "title": "Do not disable the filter",
+          "content": "The target rule matches the physical egress interface. Your objective is to route the blocked destination through the tunnel, not to delete the rule.",
+          "hint_penalty": 20,
+          "order": 1
+        }
+      ],
+      "incorrect_answer_limit": 10,
+      "attachments": [],
+      "max_score": 50,
+      "variant_answers": true,
+      "reference_solution": [],
+      "mitre_techniques": [],
+      "expected_commands": [
+        "curl",
+        "iptables-save",
+        "ip"
+      ],
+      "commands_required": false
+    },
+    {
+      "title": "Task 2 - Configure the VPN server, NAT, and client",
+      "level_type": "TRAINING_LEVEL",
+      "order": 3,
+      "estimated_duration": 25,
+      "minimal_possible_solve_time": 8,
+      "answer": null,
+      "answer_variable_name": "flag_web",
+      "content": "You must configure both ends of the tunnel using the original SEED programs. The server binary is `/usr/local/sbin/vpnserver`; the client binary is `/usr/local/bin/vpnclient`.\n\n### Part A - Configure the VPN server\n\nOn the `server` node:\n\n1. In terminal 1, run `sudo /usr/local/sbin/vpnserver`. The program creates `tun0` and waits for a client.\n2. In terminal 2, assign `192.168.53.1/24` to `tun0`, bring it up, and enable IPv4 forwarding.\n3. Identify the server-side interface with `ip -o route get 192.168.20.1`.\n4. Permit UDP/55555 from the client subnet, allow the target-scoped FORWARD path in both directions, and add POSTROUTING MASQUERADE for `192.168.53.0/24` traffic to `192.168.20.1/32`.\n5. Leave `vpnserver` running.\n\n### Part B - Configure the VPN client\n\nOn the `client` node:\n\n1. In terminal 1, run `sudo /usr/local/bin/vpnclient 192.168.20.5`. The program creates `tun0` and sends the SEED sample's initial UDP `Hello` message to the server.\n2. In terminal 2, assign `192.168.53.5/24` to `tun0` and bring it up.\n3. Add a host route for `192.168.20.1/32` through `tun0`. Do not change the default route.\n4. Request `http://192.168.20.1:8080/flag`.\n\nImportant: do not run `ip tuntap add` before starting either program. The SEED programs create their own `tun0` interfaces. Start the server before the client because the sample client sends its initial `Hello` datagram only once.\n\nSubmit the six-character value returned by `/flag`. The router only accepts target traffic sourced from the VPN server, so the end-to-end request requires the tunnel, forwarding, and source NAT to be correct.",
+      "solution": "### On the server\n\nIn terminal 1, start the SEED server. It creates `tun0` and waits for the client:\n\n```bash\nsudo /usr/local/sbin/vpnserver\n```\n\nIn terminal 2, configure the interface and forwarding:\n\n```bash\nsudo ip addr add 192.168.53.1/24 dev tun0\nsudo ip link set tun0 up\nsudo sysctl -w net.ipv4.ip_forward=1\n```\n\nFind the interface used to reach the target and install the rules:\n\n```bash\nIFACE=$(ip -o route get 192.168.20.1 | awk '{for (i=1; i<=NF; i++) if ($i==\"dev\") {print $(i+1); exit}}')\nsudo iptables -C INPUT -p udp -s 192.168.30.0/24 --dport 55555 -j ACCEPT 2>/dev/null || \\\n  sudo iptables -I INPUT 1 -p udp -s 192.168.30.0/24 --dport 55555 -j ACCEPT\nsudo iptables -C FORWARD -i tun0 -o \"$IFACE\" -d 192.168.20.1/32 -j ACCEPT 2>/dev/null || \\\n  sudo iptables -I FORWARD 1 -i tun0 -o \"$IFACE\" -d 192.168.20.1/32 -j ACCEPT\nsudo iptables -C FORWARD -i \"$IFACE\" -o tun0 -s 192.168.20.1/32 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || \\\n  sudo iptables -I FORWARD 1 -i \"$IFACE\" -o tun0 -s 192.168.20.1/32 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\nsudo iptables -t nat -C POSTROUTING -s 192.168.53.0/24 -d 192.168.20.1/32 -o \"$IFACE\" -j MASQUERADE 2>/dev/null || \\\n  sudo iptables -t nat -A POSTROUTING -s 192.168.53.0/24 -d 192.168.20.1/32 -o \"$IFACE\" -j MASQUERADE\n```\n\nKeep the `vpnserver` process running in terminal 1.\n\n### On the client\n\nIn terminal 1, start the client with the server's IP address. It creates `tun0` and sends its initial `Hello` datagram:\n\n```bash\nsudo /usr/local/bin/vpnclient 192.168.20.5\n```\n\nIn terminal 2, configure the interface and add only the target host route:\n\n```bash\nsudo ip addr add 192.168.53.5/24 dev tun0\nsudo ip link set tun0 up\nsudo ip route replace 192.168.20.1/32 dev tun0\n```\n\nThen retrieve the web flag:\n\n```bash\ncurl http://192.168.20.1:8080/flag\n```\n\nSubmit the six-character value printed after `VPN_PATH_FLAG=`. The default route remains unchanged, so the outer UDP packet can still reach the VPN server.",
+      "solution_penalized": true,
+      "hints": [
+        {
+          "title": "Configure the server first",
+          "content": "Start `sudo /usr/local/sbin/vpnserver` first. It creates `tun0`; configure `192.168.53.1/24` from a second terminal and enable `net.ipv4.ip_forward`.",
+          "hint_penalty": 10,
+          "order": 0
+        },
+        {
+          "title": "Do not forget source NAT",
+          "content": "The target only accepts packets sourced from `192.168.20.5`. Use MASQUERADE for packets from `192.168.53.0/24` to `192.168.20.1/32` on the server-side interface.",
+          "hint_penalty": 20,
+          "order": 1
+        },
+        {
+          "title": "Use a host route on the client",
+          "content": "Start `sudo /usr/local/bin/vpnclient 192.168.20.5`, then configure the automatically-created `tun0`. Add only `192.168.20.1/32` through `tun0`; leave the default route alone.",
+          "hint_penalty": 30,
+          "order": 2
+        }
+      ],
+      "incorrect_answer_limit": 10,
+      "attachments": [],
+      "max_score": 150,
+      "variant_answers": true,
+      "reference_solution": [],
+      "mitre_techniques": [],
+      "expected_commands": [
+        "ip",
+        "sysctl",
+        "iptables",
+        "vpnserver",
+        "vpnclient",
+        "curl"
+      ],
+      "commands_required": false
+    },
+    {
+      "title": "Task 3 - Verify non-web traffic",
+      "level_type": "TRAINING_LEVEL",
+      "order": 4,
+      "estimated_duration": 8,
+      "minimal_possible_solve_time": 2,
+      "answer": null,
+      "answer_variable_name": "flag_tcp",
+      "content": "The exercise is not intended to work only for HTTP. Verify that the same VPN tunnel transports another protocol.\n\n1. Use `nc` (netcat) to connect to `192.168.20.1` on TCP port `2323`.\n2. Read the service banner and find the line `TCP_SERVICE_FLAG=<token>`.\n3. Submit only the six-character token.\n\nDo not add a second route or change the default gateway: this service is on the same target host, so the existing target host route should carry it through `tun0`.",
+      "solution": "After the VPN client is running and the host route to `192.168.20.1/32` uses `tun0`, run:\n\n```bash\nnc -nv 192.168.20.1 2323\n```\n\nThe service banner contains `TCP_SERVICE_FLAG=${ANSWER}`. Submit the six-character value. The server forwarding and NAT rules are target-host scoped rather than HTTP-port scoped, so the tunnel transports this non-web TCP service as well.",
+      "solution_penalized": true,
+      "hints": [
+        {
+          "title": "Use netcat",
+          "content": "`nc -nv <host> <port>` opens a raw TCP connection and prints the service banner.",
+          "hint_penalty": 10,
+          "order": 0
+        },
+        {
+          "title": "No new route is needed",
+          "content": "Routing is performed by destination IP. The same `/32` route for `192.168.20.1` should carry both HTTP and this TCP service.",
+          "hint_penalty": 20,
+          "order": 1
+        }
+      ],
+      "incorrect_answer_limit": 10,
+      "attachments": [],
+      "max_score": 75,
+      "variant_answers": true,
+      "reference_solution": [],
+      "mitre_techniques": [],
+      "expected_commands": [
+        "nc",
+        "ip route"
+      ],
+      "commands_required": false
+    },
+    {
+      "title": "Task 4 - Prove the packet path",
+      "level_type": "TRAINING_LEVEL",
+      "order": 5,
+      "estimated_duration": 15,
+      "minimal_possible_solve_time": 4,
+      "answer": null,
+      "answer_variable_name": "flag_pcap",
+      "content": "Reachability alone is not sufficient evidence. You must show that the HTTP response traversed the TUN interface.\n\n1. Start a packet capture on `tun0`, filtered for `192.168.20.1` and TCP port `8080`.\n2. From another terminal, request `http://192.168.20.1:8080/capture`.\n3. Stop the capture and inspect the saved packets. Find the HTTP response header `X-CRCZ-Lab-Flag`.\n4. Submit the six-character value in that header.\n\nFor your report, compare this with a capture on the physical interface (`ens3` may have a different name). On the physical interface you should see the outer UDP traffic to the VPN server; on `tun0` you should see the inner TCP/HTTP exchange. The tunnel is not encrypted, so the inner payload is visible after decapsulation.",
+      "solution": "Start a capture on the tunnel interface:\n\n```bash\nsudo tcpdump -ni tun0 -s0 -w /tmp/vpn-proof.pcap 'host 192.168.20.1 and tcp port 8080'\n```\n\nWhile it is running, request the capture endpoint in another terminal:\n\n```bash\ncurl http://192.168.20.1:8080/capture\n```\n\nStop `tcpdump` with Ctrl+C and inspect the saved response:\n\n```bash\nsudo tcpdump -nn -A -r /tmp/vpn-proof.pcap | grep -i 'X-CRCZ-Lab-Flag'\n```\n\nThe header contains **`${ANSWER}`**. Submit that token. To demonstrate encapsulation, separately run `sudo tcpdump -ni <physical-interface> udp port 55555`; the physical interface carries the UDP tunnel packets, while `tun0` exposes the inner HTTP traffic.",
+      "solution_penalized": true,
+      "hints": [
+        {
+          "title": "Capture the inner traffic",
+          "content": "The inner TCP packets appear on `tun0`. Use `tcpdump -w` to save them to a pcap file while you make the HTTP request.",
+          "hint_penalty": 10,
+          "order": 0
+        },
+        {
+          "title": "Inspect HTTP headers",
+          "content": "The challenge token is in the response header `X-CRCZ-Lab-Flag`. Use `tcpdump -A -r` to print the captured HTTP data.",
+          "hint_penalty": 20,
+          "order": 1
+        }
+      ],
+      "incorrect_answer_limit": 10,
+      "attachments": [],
+      "max_score": 100,
+      "variant_answers": true,
+      "reference_solution": [],
+      "mitre_techniques": [],
+      "expected_commands": [
+        "tcpdump",
+        "curl",
+        "ip"
+      ],
+      "commands_required": false
+    },
+    {
+      "title": "Knowledge check",
+      "level_type": "ASSESSMENT_LEVEL",
+      "order": 6,
+      "estimated_duration": 5,
+      "minimal_possible_solve_time": null,
+      "questions": [
+        {
+          "question_type": "MCQ",
+          "text": "Why is source NAT (MASQUERADE) applied on the VPN server?",
+          "points": 100,
+          "penalty": 0,
+          "order": 0,
+          "answer_required": true,
+          "choices": [
+            {
+              "text": "So the target replies to an address owned by the VPN server, which can return the packet through the tunnel.",
+              "correct": true,
+              "order": 0
+            },
+            {
+              "text": "To encrypt the traffic inside the tunnel.",
+              "correct": false,
+              "order": 1
+            },
+            {
+              "text": "To change the client default gateway.",
+              "correct": false,
+              "order": 2
+            }
+          ]
+        },
+        {
+          "question_type": "MCQ",
+          "text": "Does the teaching VPN encrypt the inner IP packet?",
+          "points": 100,
+          "penalty": 0,
+          "order": 1,
+          "answer_required": true,
+          "choices": [
+            {
+              "text": "Yes, all traffic is encrypted with TLS.",
+              "correct": false,
+              "order": 0
+            },
+            {
+              "text": "No. This lab demonstrates tunnelling only; the inner traffic is not encrypted.",
+              "correct": true,
+              "order": 1
+            }
+          ]
+        },
+        {
+          "question_type": "MCQ",
+          "text": "What should happen to the client default route in this exercise?",
+          "points": 100,
+          "penalty": 0,
+          "order": 2,
+          "answer_required": true,
+          "choices": [
+            {
+              "text": "Replace it with tun0 so every packet uses the VPN.",
+              "correct": false,
+              "order": 0
+            },
+            {
+              "text": "Leave it unchanged and add a host route for the blocked target through tun0.",
+              "correct": true,
+              "order": 1
+            },
+            {
+              "text": "Delete it after starting the VPN client.",
+              "correct": false,
+              "order": 2
+            }
+          ]
+        }
+      ],
+      "instructions": "Answer the questions about forwarding, NAT, tunnelling, encryption, and routing.",
+      "assessment_type": "TEST"
+    }
+  ],
+  "estimated_duration": 70,
+  "variant_sandboxes": true
+}

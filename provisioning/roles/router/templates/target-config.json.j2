@@ -1,0 +1,8 @@
+{
+  "target_bind": {{ lab_target_ip | to_json }},
+  "http_port": {{ lab_target_port | to_json }},
+  "tcp_port": {{ lab_tcp_port | to_json }},
+  "flag_web": {{ flag_web | to_json }},
+  "flag_tcp": {{ flag_tcp | to_json }},
+  "flag_pcap": {{ flag_pcap | to_json }}
+}

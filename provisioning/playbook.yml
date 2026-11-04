@@ -1,0 +1,49 @@
+---
+- name: Install common lab utilities
+  hosts: "hosts,routers"
+  become: true
+  gather_facts: true
+  tasks:
+    - name: Refresh package metadata and install base tools
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+        name:
+          - iproute2
+          - iptables
+          - python3
+        state: present
+
+    - name: Ensure the TUN kernel module is loaded
+      ansible.builtin.command: modprobe tun
+      changed_when: false
+      failed_when: false
+
+- name: Configure the student-accessible VPN server
+  hosts: server
+  become: true
+  gather_facts: true
+  roles:
+    - role: user-access
+      user_access_username: user
+      user_access_password: Password123
+      user_access_sudo: true
+    - server
+
+- name: Configure the isolated target site and router policy
+  hosts: router
+  become: true
+  gather_facts: true
+  roles:
+    - router
+
+- name: Configure the student workstation
+  hosts: client
+  become: true
+  gather_facts: true
+  roles:
+    - role: user-access
+      user_access_username: user
+      user_access_password: Password123
+      user_access_sudo: true
+    - client

@@ -1,0 +1,17 @@
+# APG variables: each sandbox receives independent short alphanumeric flags.
+# These names must match answer_variable_name in training.json.
+flag_firewall:
+  type: password
+  length: 6
+
+flag_web:
+  type: password
+  length: 6
+
+flag_tcp:
+  type: password
+  length: 6
+
+flag_pcap:
+  type: password
+  length: 6

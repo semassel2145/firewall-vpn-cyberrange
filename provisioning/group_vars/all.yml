@@ -1,0 +1,11 @@
+---
+lab_target_ip: 192.168.20.1
+lab_target_port: 8080
+lab_tcp_port: 2323
+vpn_server_ip: 192.168.20.5
+vpn_server_port: 55555
+vpn_client_ip: 192.168.30.5
+vpn_client_cidr: 192.168.30.0/24
+vpn_tunnel_server_ip: 192.168.53.1
+vpn_tunnel_client_ip: 192.168.53.5
+vpn_tunnel_cidr: 192.168.53.0/24

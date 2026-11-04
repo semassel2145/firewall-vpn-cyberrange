@@ -1,0 +1,67 @@
+---
+- name: Install server-side lab tools and compiler
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+    name:
+      - build-essential
+      - iproute2
+      - iptables
+      - tcpdump
+      - net-tools
+    state: present
+
+- name: Create lab working directory
+  ansible.builtin.file:
+    path: /opt/firewall-vpn
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Copy the SEED VPN server source
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../seed-source/vpnserver.c"
+    dest: /opt/firewall-vpn/vpnserver.c
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Compile the SEED VPN server
+  ansible.builtin.command:
+    argv:
+      - gcc
+      - -O2
+      - -o
+      - /usr/local/sbin/vpnserver
+      - /opt/firewall-vpn/vpnserver.c
+  args:
+    creates: /usr/local/sbin/vpnserver
+
+- name: Create server-side student instructions
+  ansible.builtin.copy:
+    dest: /home/user/README-firewall-vpn-server.txt
+    owner: user
+    group: user
+    mode: '0644'
+    content: |
+      Firewall-VPN Lab - SEED VPN server
+      ==================================
+      VPN server address: 192.168.20.5 UDP/55555
+      Server TUN address: 192.168.53.1/24
+      Target host: 192.168.20.1/32
+
+      The SEED vpnserver.c creates tun0 when it starts. In terminal 1 run:
+        sudo /usr/local/sbin/vpnserver
+
+      In terminal 2 configure the created interface and enable forwarding:
+        sudo ip addr add 192.168.53.1/24 dev tun0
+        sudo ip link set tun0 up
+        sudo sysctl -w net.ipv4.ip_forward=1
+
+      Identify the server-side interface with:
+        ip -o route get 192.168.20.1
+
+      Then add the UDP/55555 INPUT rule, the target-scoped FORWARD rules,
+      and the POSTROUTING MASQUERADE rule. The commands are in the training.
+      Keep vpnserver running. Do not create tun0 manually before starting it.

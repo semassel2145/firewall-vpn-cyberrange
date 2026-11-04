@@ -1,0 +1,54 @@
+name: firewall-vpn-evasion
+
+hosts:
+  - name: server
+    base_box:
+      image: ubuntu-noble-x86_64
+      mgmt_user: ubuntu
+    flavor: standard.small
+    volumes:
+      - size: 16
+
+  - name: client
+    base_box:
+      image: ubuntu-noble-x86_64
+      mgmt_user: ubuntu
+    flavor: standard.small
+    volumes:
+      - size: 16
+
+routers:
+  - name: router
+    base_box:
+      image: debian-12-x86_64
+      mgmt_user: debian
+    flavor: standard.small
+
+networks:
+  - name: server-switch
+    cidr: 192.168.20.0/24
+    accessible_by_user: true
+
+  - name: client-switch
+    cidr: 192.168.30.0/24
+    accessible_by_user: true
+
+net_mappings:
+  - host: server
+    network: server-switch
+    ip: 192.168.20.5
+
+  - host: client
+    network: client-switch
+    ip: 192.168.30.5
+
+router_mappings:
+  - router: router
+    network: server-switch
+    ip: 192.168.20.1
+
+  - router: router
+    network: client-switch
+    ip: 192.168.30.1
+
+groups: []

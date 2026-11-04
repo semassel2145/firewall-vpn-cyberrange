@@ -1,0 +1,12 @@
+[Unit]
+Description=Firewall Evasion Lab - restrict target services to VPN server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/lab-target-firewall.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
