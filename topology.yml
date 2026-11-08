@@ -6,16 +6,14 @@ hosts:
       image: seed
       mgmt_user: ubuntu
     flavor: m1.medium
-    volumes:
-      - size: 16
+    
 
   - name: client
     base_box:
       image: seed
       mgmt_user: ubuntu
     flavor: m1.medium
-    volumes:
-      - size: 16
+  
 
 routers:
   - name: router
