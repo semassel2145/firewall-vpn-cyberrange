@@ -25,8 +25,8 @@
   gather_facts: true
   roles:
     - role: user-access
-      user_access_username: user
-      user_access_password: Password123
+      user_access_username: seed
+      user_access_password: dees
       user_access_sudo: true
     - server
 
@@ -43,7 +43,7 @@
   gather_facts: true
   roles:
     - role: user-access
-      user_access_username: user
-      user_access_password: Password123
+      user_access_username: seed
+      user_access_password: dees
       user_access_sudo: true
     - client
